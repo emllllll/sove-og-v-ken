@@ -1,0 +1,258 @@
+
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sleep Detector AI</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at top, #24134b, #090914 65%);
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 35px 15px;
+}
+
+h1 {
+    font-size: 42px;
+    letter-spacing: 4px;
+    color: #c4a5ff;
+    text-shadow: 0 0 25px #9333ea;
+}
+
+.subtitle {
+    color: #aaa;
+    letter-spacing: 2px;
+}
+
+.container {
+    max-width: 650px;
+    margin: 35px auto;
+    padding: 30px;
+    border: 1px solid #7041a5;
+    border-radius: 25px;
+    background: rgba(255,255,255,0.05);
+    box-shadow: 0 0 35px #54228a44;
+}
+
+.camera {
+    display: inline-block;
+    border: 3px solid #a855f7;
+    border-radius: 18px;
+    padding: 6px;
+    margin: 20px;
+    box-shadow: 0 0 25px #9333ea77;
+}
+
+#webcam-container canvas {
+    display: block;
+    border-radius: 12px;
+    max-width: 100%;
+}
+
+.status {
+    font-size: 28px;
+    font-weight: bold;
+    margin: 25px 0;
+}
+
+#message {
+    color: #aaa;
+    min-height: 25px;
+}
+
+button {
+    background: linear-gradient(90deg,#9333ea,#2563eb);
+    color: white;
+    border: none;
+    padding: 15px 35px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    margin: 8px;
+}
+
+button:hover {
+    box-shadow: 0 0 25px #9333ea;
+    transform: translateY(-2px);
+}
+
+button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.warning {
+    animation: blink 1s infinite;
+    color: #ff6688;
+    text-shadow: 0 0 20px #ff3366;
+}
+
+@keyframes blink {
+    50% { opacity: .25; }
+}
+
+#predictions {
+    color: #b9a6dc;
+    font-size: 14px;
+    margin-top: 20px;
+}
+
+footer {
+    color: #777;
+    margin-top: 35px;
+    font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>✦ SLEEP DETECTOR</h1>
+<p class="subtitle">ARTIFICIAL INTELLIGENCE SYSTEM</p>
+
+<div class="container">
+
+    <h2>📷 CAMERA SCANNER</h2>
+    <p style="color:#aaa">AI-powered sleep detection</p>
+
+    <div class="camera">
+        <div id="webcam-container"></div>
+    </div>
+
+    <div id="status" class="status">SYSTEM READY</div>
+    <div id="message">Trykk Start for å aktivere AI-en.</div>
+
+    <button id="start" onclick="startAI()">START SCANNER</button>
+    <button id="stop" onclick="stopAI()" disabled>STOPP</button>
+
+    <div id="predictions"></div>
+
+</div>
+
+<footer>
+    POWERED BY TEACHABLE MACHINE & TENSORFLOW.JS
+</footer>
+
+<script>
+const URL = "https://teachablemachine.withgoogle.com/models/l6HLVIN5w/";
+
+let model, webcam;
+let running = false;
+let animationId;
+let lastWarning = 0;
+
+async function startAI() {
+    if (running) return;
+
+    const status = document.getElementById("status");
+    const message = document.getElementById("message");
+
+    try {
+        status.textContent = "LOADING AI...";
+        message.textContent = "Laster inn modellen...";
+
+        model = await tmImage.load(
+            URL + "model.json",
+            URL + "metadata.json"
+        );
+
+        webcam = new tmImage.Webcam(300, 300, true);
+        await webcam.setup();
+        await webcam.play();
+
+        document.getElementById("webcam-container")
+            .replaceChildren(webcam.canvas);
+
+        running = true;
+        document.getElementById("start").disabled = true;
+        document.getElementById("stop").disabled = false;
+
+        loop();
+
+    } catch (error) {
+        status.textContent = "ERROR";
+        message.textContent = error.message;
+        stopAI();
+    }
+}
+
+async function loop() {
+    if (!running) return;
+
+    try {
+        webcam.update();
+        const predictions = await model.predict(webcam.canvas);
+
+        const awake = predictions.find(p =>
+            p.className.trim().toUpperCase() === "VÅKEN"
+        );
+
+        const asleep = predictions.find(p =>
+            p.className.trim().toUpperCase() === "SOVER"
+        );
+
+        if (!awake || !asleep) {
+            throw new Error("Fant ikke klassene VÅKEN og SOVER.");
+        }
+
+        const status = document.getElementById("status");
+        const message = document.getElementById("message");
+
+        document.getElementById("predictions").textContent =
+            "VÅKEN: " + (awake.probability * 100).toFixed(1) +
+            "% | SOVER: " + (asleep.probability * 100).toFixed(1) + "%";
+
+        if (asleep.probability > 0.85) {
+            status.textContent = "⚠ SOVER?";
+            status.className = "status warning";
+            message.textContent = "AI-en registrerer lukkede øyne!";
+
+        } else {
+            status.textContent = "✓ VÅKEN";
+            status.className = "status";
+            message.textContent = "Alt ser normalt ut.";
+        }
+
+    } catch (error) {
+        document.getElementById("message").textContent = error.message;
+        stopAI();
+        return;
+    }
+
+    if (running) {
+        animationId = requestAnimationFrame(loop);
+    }
+}
+
+function stopAI() {
+    running = false;
+
+    if (animationId) cancelAnimationFrame(animationId);
+
+    if (webcam) {
+        webcam.stop();
+        webcam = null;
+    }
+
+    document.getElementById("webcam-container").innerHTML = "";
+    document.getElementById("start").disabled = false;
+    document.getElementById("stop").disabled = true;
+    document.getElementById("status").textContent = "SYSTEM READY";
+    document.getElementById("status").className = "status";
+    document.getElementById("message").textContent = "Skanneren er stoppet.";
+}
+</script>
+
+</body>
+</html>
